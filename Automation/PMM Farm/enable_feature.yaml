@@ -1,0 +1,11 @@
+2026-W21:
+  - 
+    test.test2.adb: "0x00"
+    test.x.y: "0x01"
+    flag: null
+
+2026-W22:
+  - 
+    test.test2.adb: "0x00"
+    test.x.y: "0x01"
+    flag: null

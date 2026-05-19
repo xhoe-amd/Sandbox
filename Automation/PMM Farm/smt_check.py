@@ -8,7 +8,7 @@ import requests
 from enum import IntEnum
 
 class Program(IntEnum):
-    MAGNUS = 1
+    # MAGNUS = 1 ## Magnus not found on SMT yet
     GAINSBOROUGH = 1434
     SOUNDWAVE = 1427
     CANIS = 1430
@@ -62,7 +62,6 @@ def get_today_start_timestamp():
 def get_current_timestamp():
     return int(datetime.now().timestamp() * 1000)
 
-
 # =========================
 # API CALL
 # =========================
@@ -70,35 +69,35 @@ def check_timeline():
     start_ts = get_today_start_timestamp()
     end_ts = get_current_timestamp()
 
-    # payload = {
-    #     "weeklyOrMajor": "All",
-    #     "intOrNDA": "All",
-    #     "platform": "All",
-    #     "sku": None,
-    #     "state": "All",
-    #     "startDate": str(start_ts),
-    #     "endDate": str(end_ts),
-    #     "label": None,
-    #     "programId": PROGRAM_ID,
-    #     "qaType": "All",
-    #     "dateType": "Released Between",
-    #     "oem": "All"
-    # }
-
     payload = {
         "weeklyOrMajor": "All",
         "intOrNDA": "All",
         "platform": "All",
         "sku": None,
         "state": "All",
-        "startDate": "1778428800000",
-        "endDate": "1778515200000",
+        "startDate": str(start_ts),
+        "endDate": str(end_ts),
         "label": None,
-        "programId": 1427,
+        "programId": PROGRAM_ID,
         "qaType": "All",
         "dateType": "Released Between",
         "oem": "All"
     }
+
+    # payload = {
+    #     "weeklyOrMajor": "All",
+    #     "intOrNDA": "All",
+    #     "platform": "All",
+    #     "sku": None,
+    #     "state": "All",
+    #     "startDate": "1778428800000",
+    #     "endDate": "1778515200000",
+    #     "label": None,
+    #     "programId": 1427,
+    #     "qaType": "All",
+    #     "dateType": "Released Between",
+    #     "oem": "All"
+    # }
 
     print(f"\n[{datetime.now()}] Checking data...")
     print(f"Start: {start_ts}, End: {end_ts}")
