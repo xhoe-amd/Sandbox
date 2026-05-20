@@ -1,0 +1,14 @@
+# Station Configuration for APEX Scheduler
+# Format: IP address as key, with subscription_id and name as nested values
+
+192.168.1.10:
+  subscription_id: "4574"
+  name: "Station-A"
+
+192.168.1.11:
+  subscription_id: "4575"
+  name: "Station-B"
+
+192.168.1.12:
+  subscription_id: "4576"
+  name: "Station-C"
