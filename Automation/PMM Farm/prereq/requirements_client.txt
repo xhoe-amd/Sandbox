@@ -1,0 +1,4 @@
+# Requirements for pmm_client.py
+# PMM Farm SUT Client
+
+requests>=2.25.0

@@ -1,0 +1,7 @@
+# Requirements for combined_server.py
+# PMM Farm Unified Host Server
+
+flask>=2.0.0
+pyyaml>=5.0
+requests>=2.25.0
+requests-ntlm>=1.1.0
