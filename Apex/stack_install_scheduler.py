@@ -2,7 +2,7 @@
 Weekend APEX Job Scheduler.
 
 This script checks if it's Saturday or Sunday and schedules APEX jobs
-at 12:00 AM on weekends for MRDC Weekly Stack Installation.
+on weekends for MRDC Weekly Stack Installation.
 
 Usage:
     python weekend_scheduler.py [OPTIONS]
@@ -152,17 +152,13 @@ def is_weekend():
     return datetime.now().weekday() in (5, 6)
 
 
-def is_midnight_hour():
-    """Check if current hour is 0 (midnight / 12 AM)."""
-    return datetime.now().hour == 0
-
-
 # =========================
 # Main loop
 # =========================
 def main():
     """
-    Main loop that monitors for weekends and schedules jobs at midnight.
+    Main loop that monitors for weekends and schedules jobs.
+    Schedules once per weekend day when detected.
     """
     print("🚀 Weekend Scheduler Started")
     print(f"   Check interval: {args.check_interval} seconds")
@@ -186,16 +182,14 @@ def main():
             day_name = now.strftime("%A")
             print(f"📅 Today is {day_name} (Weekend)")
             
-            # Check if it's midnight hour and we haven't scheduled today
-            if is_midnight_hour() and last_scheduled_date != today:
-                print(f"🕛 It's midnight on {day_name}! Scheduling jobs...")
+            # Schedule if we haven't scheduled today
+            if last_scheduled_date != today:
+                print(f"🚀 It's {day_name}! Scheduling jobs...")
                 schedule_weekend_jobs()
                 last_scheduled_date = today
                 print(f"✅ Scheduled for {today}. Will not schedule again today.")
-            elif last_scheduled_date == today:
-                print(f"⏳ Already scheduled for today ({today})")
             else:
-                print(f"⏳ Waiting for midnight (current hour: {now.hour})")
+                print(f"⏳ Already scheduled for today ({today})")
         else:
             day_name = now.strftime("%A")
             print(f"📅 Today is {day_name} (Weekday - not scheduling)")
