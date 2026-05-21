@@ -31,11 +31,11 @@ SUBSCRIPTIONS = [
         "name_prefix": "SWV - MRDC Weekly Stack Installation",
         "test_queue": "SWV - Weekly Stack Installation"
     },
-    # {
-    #     "subscription_id": "4601",
-    #     "name_prefix": "CNS - MRDC Weekly Stack Installation",
-    #     "test_queue": "CNS - Weekly Stack Installation"
-    # }
+    {
+        "subscription_id": "4601",
+        "name_prefix": "CNS - MRDC Weekly Stack Installation",
+        "test_queue": "CNS - Weekly Stack Installation"
+    }
 ]
 
 # =========================
