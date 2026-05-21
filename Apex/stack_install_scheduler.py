@@ -100,6 +100,7 @@ def schedule_apex_job(subscription_id, job_name, test_queue):
         "completion_criteria": "AllTestStations",
         "test_loops": "1",
         "subscription_id": subscription_id,
+        "setup_queue": "",
         "test_queue": test_queue,
         "argument_overrides": "",
         "execution_label": args.execution_label
