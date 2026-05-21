@@ -83,7 +83,7 @@ from enum import IntEnum
 # =====================================================
 # Use %LOCALAPPDATA% for Windows (standard location for per-user app data)
 # Falls back to user home directory on other platforms
-APP_NAME = "PMMServer"
+APP_NAME = "APEXScheduler"
 if os.name == 'nt':  # Windows
     APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), APP_NAME)
 else:  # Linux/Mac
