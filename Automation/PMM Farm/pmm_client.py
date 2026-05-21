@@ -33,32 +33,47 @@ parser = argparse.ArgumentParser(description="SUT Client")
 parser.add_argument(
     "--host",
     help="Host IP (e.g. 192.168.1.10)",
-    default="10.148.34.147"
+    default="10.148.216.73" # Harris Host
+    # default="localhost" # localhost for testing
 )
 
 parser.add_argument(
     "--port",
-    default="5000",
-    help="Port (default: 5000)"
+    type=int,
+    default=5000,
+    help="Host port number (default: 5000)"
 )
 
 parser.add_argument(
     "--name",
     default="SUT",
-    help="SUT name (optional)"
+    help="SUT identifier name (default: SUT)"
 )
 
 parser.add_argument(
     "--interval",
     type=int,
     default=5,
-    help="Retry interval in seconds"
+    help="Retry interval in seconds (default: 5)"
+)
+
+parser.add_argument(
+    "--save-dir",
+    default="received",
+    help="Directory to save received files (default: received)"
+)
+
+parser.add_argument(
+    "--timeout",
+    type=int,
+    default=10,
+    help="Request timeout in seconds (default: 10)"
 )
 
 args = parser.parse_args()
 
 HOST = f"http://{args.host}:{args.port}"
-SAVE_DIR = "received"
+SAVE_DIR = args.save_dir
 SUT_NAME = args.name
 
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -83,7 +98,7 @@ def get_next_afc_file():
             - reason: Error reason (if status is "error")
     """
     try:
-        r = requests.get(f"{HOST}/get_next_afc_file", timeout=10)
+        r = requests.get(f"{HOST}/get_next_afc_file", timeout=args.timeout)
         return r.json()
     except Exception as e:
         print(f"⚠️ [{SUT_NAME}] Error connecting to host:", e)
