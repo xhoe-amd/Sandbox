@@ -135,7 +135,12 @@ def schedule_apex_job(subscription_id, job_name, test_queue):
 # Schedule weekend jobs
 # =========================
 def schedule_weekend_jobs():
-    """Schedule APEX jobs for both SWV (4600) and CNS (4601)."""
+    """
+    Schedule APEX jobs for all configured subscriptions.
+    
+    Returns:
+        bool: True if all jobs were scheduled successfully, False if any failed.
+    """
     print("🚀 Scheduling weekend jobs...")
     
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S MYT')
@@ -159,6 +164,10 @@ def schedule_weekend_jobs():
     print(f"\n📊 Scheduling Summary:")
     print(f"   Successfully Scheduled: {scheduled}")
     print(f"   Failed: {failed}")
+    
+    # Return True only if all jobs succeeded
+    all_success = (failed == 0 and scheduled > 0)
+    return all_success
 
 
 # =========================
@@ -242,10 +251,14 @@ def main():
             # Schedule if we haven't scheduled today
             if last_scheduled_date != today:
                 print(f"🚀 It's {day_name}! Scheduling jobs...")
-                schedule_weekend_jobs()
-                last_scheduled_date = today
-                save_last_scheduled_date(today)
-                print(f"✅ Scheduled for {today}. Will not schedule again today.")
+                success = schedule_weekend_jobs()
+                
+                if success:
+                    last_scheduled_date = today
+                    save_last_scheduled_date(today)
+                    print(f"✅ Scheduled for {today}. Will not schedule again today.")
+                else:
+                    print(f"❌ Scheduling failed. Will retry on next check.")
             else:
                 print(f"⏳ Already scheduled for today ({today})")
         else:
