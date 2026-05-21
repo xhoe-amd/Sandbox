@@ -127,6 +127,43 @@ def save_persistent_state(state_data):
 
 
 # =====================================================
+# CONFIG FILE LOADING
+# =====================================================
+def load_config_file(config_path):
+    """
+    Load configuration from YAML file.
+    
+    Args:
+        config_path (str): Path to the config YAML file.
+    
+    Returns:
+        dict: Configuration dictionary, or empty dict if file not found.
+    """
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f) or {}
+                print(f"📂 Loaded config from {config_path}")
+                return config
+    except Exception as e:
+        print(f"⚠️ Could not load config file: {e}")
+    return {}
+
+
+# Get the directory where this script is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load config file (defaults to config.yaml in script directory)
+CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.yaml")
+config = load_config_file(CONFIG_FILE)
+
+# Helper to get nested config values with defaults
+def get_config(section, key, default=None):
+    """Get a value from the config file with a default fallback."""
+    return config.get(section, {}).get(key, default)
+
+
+# =====================================================
 # PROGRAM ENUM
 # =====================================================
 class Program(IntEnum):
@@ -153,48 +190,87 @@ class Program(IntEnum):
 # =====================================================
 # ARGUMENT PARSING
 # =====================================================
-# Get the directory where this script is located
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+parser = argparse.ArgumentParser(
+    description="Unified Host Server for PMM Farm Feature Testing",
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog="""
+Configuration:
+  Default settings are loaded from config.yaml in the script directory.
+  Command-line arguments will override config.yaml values.
+    """
+)
 
-parser = argparse.ArgumentParser(description="Unified Host Server")
-
-# File paths (default to relative paths from script directory)
-parser.add_argument("--yaml", default=os.path.join(SCRIPT_DIR, "enable_feature.yaml"), 
+# File paths (defaults from config.yaml)
+parser.add_argument("--yaml", 
+                    default=os.path.join(SCRIPT_DIR, get_config("paths", "feature_yaml", "enable_feature.yaml")),
                     help="Path to feature YAML config")
-parser.add_argument("--stations", default=os.path.join(SCRIPT_DIR, "stations.yaml"),
+parser.add_argument("--stations",
+                    default=os.path.join(SCRIPT_DIR, get_config("paths", "stations_yaml", "stations.yaml")),
                     help="Path to stations YAML config")
-parser.add_argument("--output", default="output", help="Output directory")
+parser.add_argument("--output",
+                    default=get_config("paths", "output_dir", "output"),
+                    help="Output directory")
 
-# Server settings
-parser.add_argument("--port", type=int, default=5000, help="Server port number")
-parser.add_argument("--host", default="0.0.0.0", help="Server host address")
+# Server settings (defaults from config.yaml)
+parser.add_argument("--port", type=int,
+                    default=get_config("server", "port", 5000),
+                    help="Server port number")
+parser.add_argument("--host",
+                    default=get_config("server", "host", "0.0.0.0"),
+                    help="Server host address")
 
-# Mode flags
-parser.add_argument("--permute", action="store_true", help="Enable permutation mode (generate all combinations)")
-parser.add_argument("--smt", action="store_true", help="Enable SMT monitoring for stack releases")
+# Mode flags (defaults from config.yaml)
+parser.add_argument("--permute", action="store_true",
+                    default=get_config("modes", "permutation", False),
+                    help="Enable permutation mode (generate all combinations)")
+parser.add_argument("--smt", action="store_true",
+                    default=get_config("modes", "smt_monitor", False),
+                    help="Enable SMT monitoring for stack releases")
 
-# SMT authentication
-parser.add_argument("--username", default="", help="Username for SMT authentication")
-parser.add_argument("--password", default="", help="Password for SMT authentication")
-parser.add_argument("--program", default="SOUNDWAVE",
-                    choices=[p.name for p in Program], help="Program name for SMT monitoring")
+# SMT authentication (defaults from config.yaml)
+parser.add_argument("--username",
+                    default=get_config("smt", "username", ""),
+                    help="Username for SMT authentication")
+parser.add_argument("--password",
+                    default=get_config("smt", "password", ""),
+                    help="Password for SMT authentication")
+parser.add_argument("--program",
+                    default=get_config("smt", "program", "SOUNDWAVE"),
+                    choices=[p.name for p in Program],
+                    help="Program name for SMT monitoring")
 
-# URLs
-parser.add_argument("--smt-url", default="http://atlstmapp01.amd.com:1234/api/getStacksForTimeline",
+# URLs (defaults from config.yaml)
+parser.add_argument("--smt-url",
+                    default=get_config("smt", "url", "http://atlstmapp01.amd.com:1234/api/getStacksForTimeline"),
                     help="SMT API URL")
-parser.add_argument("--apex-url", default="http://apexlegacy.amd.com/jobs",
+parser.add_argument("--apex-url",
+                    default=get_config("apex", "url", "http://apexlegacy.amd.com/jobs"),
                     help="APEX job scheduler URL")
 
-# APEX job settings
-parser.add_argument("--owner", default="xhoe@amd.com", help="APEX job owner email")
-parser.add_argument("--priority", default="3", help="APEX job priority")
-parser.add_argument("--setup-queue", default="Scheduler Test - Setup", help="APEX setup queue name")
-parser.add_argument("--test-queue", default="Scheduler Test - Execute", help="APEX test queue name")
-parser.add_argument("--execution-label", default="xhoe_scheduler_testing", help="APEX execution label")
+# APEX job settings (defaults from config.yaml)
+parser.add_argument("--owner",
+                    default=get_config("apex", "owner", "xhoe@amd.com"),
+                    help="APEX job owner email")
+parser.add_argument("--priority",
+                    default=get_config("apex", "priority", "3"),
+                    help="APEX job priority")
+parser.add_argument("--setup-queue",
+                    default=get_config("apex", "setup_queue", "Scheduler Test - Setup"),
+                    help="APEX setup queue name")
+parser.add_argument("--test-queue",
+                    default=get_config("apex", "test_queue", "Scheduler Test - Execute"),
+                    help="APEX test queue name")
+parser.add_argument("--execution-label",
+                    default=get_config("apex", "execution_label", "xhoe_scheduler_testing"),
+                    help="APEX execution label")
 
-# Timing intervals (in seconds)
-parser.add_argument("--monitor-interval", type=int, default=30, help="YAML monitor check interval in seconds")
-parser.add_argument("--smt-interval", type=int, default=3600, help="SMT check interval in seconds")
+# Timing intervals (defaults from config.yaml)
+parser.add_argument("--monitor-interval", type=int,
+                    default=get_config("intervals", "yaml_monitor", 30),
+                    help="YAML monitor check interval in seconds")
+parser.add_argument("--smt-interval", type=int,
+                    default=get_config("intervals", "smt_check", 3600),
+                    help="SMT check interval in seconds")
 
 args = parser.parse_args()
 
@@ -742,61 +818,106 @@ def get_next_afc_file():
 #         return False  # Fail safe: assume no jobs on error
 
 
+def schedule_single_apex_job(subscription_id, job_name, priority, setup_queue, test_queue):
+    """
+    Schedule a single APEX job with specific parameters.
+    
+    Args:
+        subscription_id (str): The APEX subscription ID for the target station.
+        job_name (str): The full job name.
+        priority (str): Job priority (1=highest, 5=lower).
+        setup_queue (str): The setup queue name.
+        test_queue (str): The test queue name.
+    
+    Returns:
+        bool: True if job was scheduled successfully (HTTP 200), False otherwise.
+    """
+    data = {
+        "name": job_name,
+        "owner": args.owner,
+        "priority": priority,
+        "is_persistent": "false",
+        "completion_criteria": "AllTestStations",
+        "test_loops": "1",
+        "subscription_id": subscription_id,
+        "setup_queue": setup_queue,
+        "test_queue": test_queue,
+        "argument_overrides": "",
+        "execution_label": get_config("apex", "execution_label", "xhoe_scheduler_testing")
+    }
+
+    try:
+        response = requests.post(APEX_URL, data=data, timeout=30)
+        print(f"📤 APEX Job: {job_name} → {response.status_code}")
+        return response.status_code == 200
+    except Exception as e:
+        print(f"❌ Error scheduling job: {e}")
+        return False
+
+
 def schedule_apex_job(subscription_id, station_name, permutation_name, install_stack=False):
     """
-    Schedule a new job on the APEX legacy system for a specific station and permutation.
+    Schedule APEX jobs for a station based on the run type (weekly or daily).
     
-    Creates and submits a new test job to the APEX job scheduler with
-    dynamic subscription_id and station name based on the provided parameters.
+    For each station/permutation, schedules TWO jobs:
+    1. Baseline job: Stack installation (weekly) or BIOS reset (daily) + baseline workloads
+    2. Feature job: Feature enablement (with pmm_client.py) + feature workloads
+    
+    Each job type has its own priority:
+    - Weekly: baseline=1, feature=2
+    - Daily: baseline=4, feature=5
     
     Args:
         subscription_id (str): The APEX subscription ID for the target station.
         station_name (str): The name of the station to run the job on.
         permutation_name (str): The name of the feature permutation being tested.
-        install_stack (bool): Flag indicating if this is triggered by a stack release.
+        install_stack (bool): True = Weekly new stack, False = Daily run
     
     Returns:
-        bool: True if job was scheduled successfully (HTTP 200), False otherwise.
-    
-    API Endpoint:
-        Uses APEX_URL from command-line arguments (default: http://apexlegacy.amd.com/jobs)
-    
-    Job Parameters:
-        - name: "{station_name} - {permutation_name} - {timestamp}"
-        - owner: From --owner argument
-        - priority: From --priority argument
-        - subscription_id: Dynamic based on station config
-        - setup_queue: From --setup-queue argument
-        - test_queue: From --test-queue argument
-        - execution_label: From --execution-label argument
-    
-    Example:
-        >>> schedule_apex_job("4574", "Station-A", "adc-flag")
-        📤 APEX Job: Station-A - adc-flag - 2026-05-20 13:50:00 MYT → 200
-        True
+        bool: True if all jobs were scheduled successfully, False if any failed.
     """
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S MYT')
-    job_name = f"{station_name} - {permutation_name} - {timestamp}"
-
-    data = {
-        "name": job_name,
-        "owner": args.owner,
-        "priority": args.priority,
-        "is_persistent": "false",
-        "completion_criteria": "AllTestStations",
-        "test_loops": "1",
-        "subscription_id": subscription_id,
-        "setup_queue": args.setup_queue,
-        "test_queue": args.test_queue,
-        "argument_overrides": "",
-        "execution_label": args.execution_label
-    }
-
-    response = requests.post(APEX_URL, data=data)
-
-    print(f"📤 APEX Job: {job_name} → {response.status_code}")
     
-    return response.status_code == 200
+    # Get config for weekly or daily run
+    apex_config = config.get("apex", {})
+    run_type = "weekly" if install_stack else "daily"
+    run_config = apex_config.get(run_type, {})
+    
+    baseline_config = run_config.get("baseline", {})
+    feature_config = run_config.get("feature", {})
+    
+    run_label = "Weekly Stack" if install_stack else "Daily"
+    print(f"📋 Scheduling {run_label} jobs for {station_name} - {permutation_name}")
+    
+    all_success = True
+    
+    # Job 1: Baseline (stack install or BIOS reset + baseline workloads)
+    baseline_job_name = f"{station_name} - Baseline - {timestamp}"
+    baseline_priority = baseline_config.get("priority", "4")
+    baseline_setup = baseline_config.get("setup_queue", "")
+    baseline_test = baseline_config.get("test_queue", "")
+    
+    print(f"   📌 Job 1 (Baseline, P{baseline_priority}): {baseline_setup} → {baseline_test}")
+    success = schedule_single_apex_job(
+        subscription_id, baseline_job_name, baseline_priority, baseline_setup, baseline_test
+    )
+    if not success:
+        all_success = False
+    
+    # Job 2: Feature (feature enablement with pmm_client + workloads)
+    feature_job_name = f"{station_name} - {permutation_name} - {timestamp}"
+    feature_priority = feature_config.get("priority", "5")
+    feature_setup = feature_config.get("setup_queue", "")
+    feature_test = feature_config.get("test_queue", "")
+    
+    print(f"   📌 Job 2 (Feature, P{feature_priority}): {feature_setup} → {feature_test}")
+    success = schedule_single_apex_job(
+        subscription_id, feature_job_name, feature_priority, feature_setup, feature_test
+    )
+    if not success:
+        all_success = False
+    
+    return all_success
 
 
 def schedule_permutations_to_stations(install_stack=False):

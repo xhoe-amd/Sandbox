@@ -1,0 +1,77 @@
+# ===========================================
+# PMM Server Configuration
+# ===========================================
+# This file contains all configurable settings for the PMM Server.
+# Command-line arguments will override these settings if provided.
+
+# -------------------------------------------
+# Server Settings
+# -------------------------------------------
+server:
+  host: "0.0.0.0"
+  port: 5000
+
+# -------------------------------------------
+# File Paths (relative to script directory)
+# -------------------------------------------
+paths:
+  feature_yaml: "enable_feature.yaml"
+  stations_yaml: "stations.yaml"
+  output_dir: "output"
+
+# -------------------------------------------
+# Mode Flags
+# -------------------------------------------
+modes:
+  permutation: false      # Enable permutation mode (generate all feature combinations)
+  smt_monitor: false      # Enable SMT monitoring for stack releases
+
+# -------------------------------------------
+# Timing Intervals (in seconds)
+# -------------------------------------------
+intervals:
+  yaml_monitor: 30        # How often to check YAML for changes
+  smt_check: 3600         # How often to check SMT for new releases (1 hour)
+
+# -------------------------------------------
+# SMT (Stack Management Tool) Settings
+# -------------------------------------------
+smt:
+  url: "http://atlstmapp01.amd.com:1234/api/getStacksForTimeline"
+  username: ""            # SMT username (NTLM auth)
+  password: ""            # SMT password (NTLM auth)
+  program: "SOUNDWAVE"    # Options: GAINSBOROUGH, SOUNDWAVE, CANIS
+
+# -------------------------------------------
+# APEX Job Scheduler Settings
+# -------------------------------------------
+apex:
+  url: "http://apexlegacy.amd.com/jobs"
+  owner: "xhoe@amd.com"
+  execution_label: "xhoe_scheduler_testing"
+  
+  # Weekly New Stack Jobs (triggered by SMT stack release)
+  weekly:
+    # Job 1: Stack installation + baseline workloads (Priority 1 = highest)
+    baseline:
+      priority: "1"
+      setup_queue: "SWV - Weekly Stack Installation"
+      test_queue: "SWV - Weekly Baseline Workloads"
+    # Job 2: Feature enablement + workloads (Priority 2)
+    feature:
+      priority: "2"
+      setup_queue: "SWV - Feature Enablement"  # includes pmm_client.py
+      test_queue: "SWV - Feature Workloads"
+  
+  # Daily Run Jobs (triggered by day change)
+  daily:
+    # Job 1: BIOS reset + baseline workloads (Priority 4)
+    baseline:
+      priority: "4"
+      setup_queue: "SWV - BIOS Reset"
+      test_queue: "SWV - Daily Baseline Workloads"
+    # Job 2: Feature enablement + workloads (Priority 5 = lower)
+    feature:
+      priority: "5"
+      setup_queue: "SWV - Feature Enablement"  # includes pmm_client.py
+      test_queue: "SWV - Feature Workloads"
