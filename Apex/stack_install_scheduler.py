@@ -18,9 +18,25 @@ Author: xhoe@amd.com
 """
 
 import argparse
+import json
+import os
 import time
-from datetime import datetime
+from datetime import datetime, date
 import requests
+
+# =========================
+# State file for persistence
+# =========================
+# Use %LOCALAPPDATA% for Windows (standard location for per-user app data)
+# Falls back to user home directory on other platforms
+APP_NAME = "APEXScheduler"
+if os.name == 'nt':  # Windows
+    APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), APP_NAME)
+else:  # Linux/Mac
+    APP_DATA_DIR = os.path.join(os.path.expanduser('~'), f'.{APP_NAME.lower()}')
+
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+STATE_FILE = os.path.join(APP_DATA_DIR, "scheduler_state.json")
 
 # =========================
 # Subscription configurations
@@ -31,11 +47,11 @@ SUBSCRIPTIONS = [
         "name_prefix": "SWV - MRDC Weekly Stack Installation",
         "test_queue": "SWV - Weekly Stack Installation"
     },
-    {
-        "subscription_id": "4601",
-        "name_prefix": "CNS - MRDC Weekly Stack Installation",
-        "test_queue": "CNS - Weekly Stack Installation"
-    }
+    # {
+    #     "subscription_id": "4601",
+    #     "name_prefix": "CNS - MRDC Weekly Stack Installation",
+    #     "test_queue": "CNS - Weekly Stack Installation"
+    # }
 ]
 
 # =========================
@@ -154,6 +170,46 @@ def is_weekend():
 
 
 # =========================
+# State persistence
+# =========================
+def load_last_scheduled_date():
+    """
+    Load the last scheduled date from the state file.
+    
+    Returns:
+        date or None: The last scheduled date, or None if not found.
+    """
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                state = json.load(f)
+                date_str = state.get("last_scheduled_date")
+                if date_str:
+                    loaded_date = date.fromisoformat(date_str)
+                    print(f"📂 Loaded state: Last scheduled on {loaded_date}")
+                    return loaded_date
+    except Exception as e:
+        print(f"⚠️ Could not load state file: {e}")
+    return None
+
+
+def save_last_scheduled_date(scheduled_date):
+    """
+    Save the last scheduled date to the state file.
+    
+    Args:
+        scheduled_date (date): The date to save.
+    """
+    try:
+        state = {"last_scheduled_date": scheduled_date.isoformat()}
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+        print(f"💾 Saved state: Last scheduled on {scheduled_date}")
+    except Exception as e:
+        print(f"⚠️ Could not save state file: {e}")
+
+
+# =========================
 # Main loop
 # =========================
 def main():
@@ -169,8 +225,8 @@ def main():
         print(f"      - {sub['subscription_id']}: {sub['name_prefix']} → {sub['test_queue']}")
     print("")
     
-    # Track if we've already scheduled for today
-    last_scheduled_date = None
+    # Track if we've already scheduled for today (load from persistent state)
+    last_scheduled_date = load_last_scheduled_date()
     
     while True:
         now = datetime.now()
@@ -188,6 +244,7 @@ def main():
                 print(f"🚀 It's {day_name}! Scheduling jobs...")
                 schedule_weekend_jobs()
                 last_scheduled_date = today
+                save_last_scheduled_date(today)
                 print(f"✅ Scheduled for {today}. Will not schedule again today.")
             else:
                 print(f"⏳ Already scheduled for today ({today})")

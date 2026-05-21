@@ -66,7 +66,7 @@ import yaml
 import itertools
 import hashlib
 import time
-from datetime import datetime
+from datetime import datetime, date
 import os
 import json
 from queue import Queue
@@ -76,6 +76,54 @@ import argparse
 import requests
 from requests_ntlm import HttpNtlmAuth
 from enum import IntEnum
+
+
+# =====================================================
+# STATE FILE FOR PERSISTENCE
+# =====================================================
+# Use %LOCALAPPDATA% for Windows (standard location for per-user app data)
+# Falls back to user home directory on other platforms
+APP_NAME = "PMMServer"
+if os.name == 'nt':  # Windows
+    APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), APP_NAME)
+else:  # Linux/Mac
+    APP_DATA_DIR = os.path.join(os.path.expanduser('~'), f'.{APP_NAME.lower()}')
+
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+STATE_FILE = os.path.join(APP_DATA_DIR, "server_state.json")
+
+
+def load_persistent_state():
+    """
+    Load persistent state from the state file.
+    
+    Returns:
+        dict: State dictionary, or empty dict if not found.
+    """
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                state = json.load(f)
+                print(f"📂 Loaded state from {STATE_FILE}")
+                return state
+    except Exception as e:
+        print(f"⚠️ Could not load state file: {e}")
+    return {}
+
+
+def save_persistent_state(state_data):
+    """
+    Save state to the state file.
+    
+    Args:
+        state_data (dict): State dictionary to save.
+    """
+    try:
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state_data, f, indent=2)
+        print(f"💾 Saved state to {STATE_FILE}")
+    except Exception as e:
+        print(f"⚠️ Could not save state file: {e}")
 
 
 # =====================================================
@@ -175,14 +223,26 @@ app = Flask(__name__)
 file_queue = Queue()  # Thread-safe queue holding (week, filename) tuples
 queue_lock = threading.Lock()  # Lock for queue operations
 
-last_hash = None  # MD5 hash of last processed YAML data (for change detection)
+# Load persistent state for hash and day tracking
+_persistent_state = load_persistent_state()
+last_hash = _persistent_state.get("last_hash")  # MD5 hash of last processed YAML data
+if last_hash:
+    print(f"📂 Restored last_hash: {last_hash}")
 
 # List to track clients that have been served jobs: (timestamp, client_ip, filename)
 served_clients = []
 served_clients_lock = threading.Lock()  # Lock for thread-safe access
 
-# Track current day for day change detection
-current_day = datetime.now().date()
+# Track current day for day change detection (load from persistent state)
+_last_day_str = _persistent_state.get("last_processed_day")
+if _last_day_str:
+    try:
+        current_day = date.fromisoformat(_last_day_str)
+        print(f"📂 Restored last processed day: {current_day}")
+    except Exception:
+        current_day = datetime.now().date()
+else:
+    current_day = datetime.now().date()
 
 # Global storage for current permutation names (populated by refresh_queue)
 current_permutations = []
@@ -519,6 +579,14 @@ def refresh_queue():
             file_queue.put((week, f))
 
     last_hash = current_hash
+    
+    # Persist the new hash
+    state = load_persistent_state()
+    state["last_hash"] = current_hash
+    state["last_generation_time"] = datetime.now().isoformat()
+    state["last_generation_week"] = week
+    state["permutation_count"] = len(current_permutations)
+    save_persistent_state(state)
 
     print(f"✅ Jobs loaded: {file_queue.qsize()}")
 
@@ -546,6 +614,10 @@ def monitor_loop():
         if today != current_day:
             print(f"📆 Day changed: {current_day} → {today}")
             current_day = today
+            # Persist the new day
+            state = load_persistent_state()
+            state["last_processed_day"] = today.isoformat()
+            save_persistent_state(state)
             # Schedule all permutations to available stations
             schedule_permutations_to_stations()
         
