@@ -20,13 +20,30 @@ Example:
 Author: xhoe@amd.com
 """
 
-import requests
-import time
-import os
 import argparse
+import logging
+import os
+import time
+from datetime import datetime
+
+import requests
+
 
 # =========================
-# Parse CLI arguments
+# Directory paths
+# =========================
+APP_NAME = "APEXScheduler"
+if os.name == 'nt':  # Windows
+    APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), APP_NAME)
+else:  # Linux/Mac
+    APP_DATA_DIR = os.path.join(os.path.expanduser('~'), f'.{APP_NAME.lower()}')
+
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+# =========================
+# Parse CLI arguments (before logging setup)
 # =========================
 parser = argparse.ArgumentParser(description="SUT Client")
 
@@ -70,6 +87,12 @@ parser.add_argument(
     help="Request timeout in seconds (default: 10)"
 )
 
+parser.add_argument(
+    "--output-file",
+    default="enable_pmm_features.txt",
+    help="Output filename (default: enable_pmm_features.txt)"
+)
+
 args = parser.parse_args()
 
 HOST = f"http://{args.host}:{args.port}"
@@ -77,6 +100,49 @@ SAVE_DIR = args.save_dir
 SUT_NAME = args.name
 
 os.makedirs(SAVE_DIR, exist_ok=True)
+
+
+# =========================
+# Logging Setup (after args parsed for dynamic filename)
+# =========================
+def setup_logging(sut_name):
+    """Configure logging to console and two files with dynamic name."""
+    log_format = '%(asctime)s | %(levelname)-7s | %(message)s'
+    date_format = '%Y-%m-%d %H:%M:%S'
+    
+    log = logging.getLogger(f'pmm_client_{sut_name}')
+    log.setLevel(logging.INFO)
+    
+    if log.handlers:
+        return log
+    
+    formatter = logging.Formatter(log_format, date_format)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_filename = f"pmm_client_{sut_name}_{timestamp}.log"
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    log.addHandler(console_handler)
+    
+    # File handler - AppData (persistent)
+    appdata_handler = logging.FileHandler(
+        os.path.join(APP_DATA_DIR, log_filename), encoding='utf-8'
+    )
+    appdata_handler.setFormatter(formatter)
+    log.addHandler(appdata_handler)
+    
+    # File handler - Local directory (convenient)
+    local_handler = logging.FileHandler(
+        os.path.join(SCRIPT_DIR, log_filename), encoding='utf-8'
+    )
+    local_handler.setFormatter(formatter)
+    log.addHandler(local_handler)
+    
+    return log
+
+
+logger = setup_logging(SUT_NAME)
 
 
 # =========================
@@ -101,7 +167,7 @@ def get_next_afc_file():
         r = requests.get(f"{HOST}/get_next_afc_file", timeout=args.timeout)
         return r.json()
     except Exception as e:
-        print(f"⚠️ [{SUT_NAME}] Error connecting to host:", e)
+        logger.warning(f"[{SUT_NAME}] Error connecting to host: {e}")
         return {"status": "error"}
 
 
@@ -115,24 +181,24 @@ def main():
     Continuously polls the server for jobs until the queue is empty.
     For each job received, saves the file content locally.
     """
-    print(f"🚀 [{SUT_NAME}] Connected to {HOST}")
+    logger.info(f"[{SUT_NAME}] Connected to {HOST}")
 
     while True:
         # Fetch next job (includes file content)
         job = get_next_afc_file()
 
         if job["status"] == "empty":
-            print(f"✅ [{SUT_NAME}] No more jobs, exiting")
+            logger.info(f"[{SUT_NAME}] No more jobs, exiting")
             break
 
         if job["status"] == "error":
             reason = job.get("reason", "unknown")
-            print(f"⚠️ [{SUT_NAME}] Error: {reason}, retrying...")
+            logger.warning(f"[{SUT_NAME}] Error: {reason}, retrying...")
             time.sleep(args.interval)
             continue
 
         if job["status"] != "ok":
-            print(f"⚠️ [{SUT_NAME}] Unexpected response, retrying...")
+            logger.warning(f"[{SUT_NAME}] Unexpected response, retrying...")
             time.sleep(args.interval)
             continue
 
@@ -140,15 +206,15 @@ def main():
         filename = job["file"]
         content = job["content"]
 
-        print(f"📥 [{SUT_NAME}] Received job: {week}/{filename}")
+        logger.info(f"[{SUT_NAME}] Received job: {week}/{filename}")
 
-        # Save locally
-        local_path = os.path.join(SAVE_DIR, filename)
+        # Save locally with configured filename
+        local_path = os.path.join(SAVE_DIR, args.output_file)
 
         with open(local_path, "w") as f:
             f.write(content)
 
-        print(f"💾 [{SUT_NAME}] Saved: {local_path}")
+        logger.info(f"[{SUT_NAME}] Saved: {local_path}")
 
         break
 
