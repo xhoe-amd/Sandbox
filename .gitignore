@@ -5,3 +5,4 @@
 /Automation/received
 /Automation/.cline_storage
 **/__pycache__
+*.log
