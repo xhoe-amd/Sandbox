@@ -20,7 +20,7 @@ from queue import Queue
 from flask import Flask, jsonify, request
 
 from modules.config_loader import (
-    config, get_config, SCRIPT_DIR,
+    config, get_config, SCRIPT_DIR, logger,
     load_persistent_state, save_persistent_state
 )
 from modules.scheduler import schedule_permutations_to_stations
@@ -50,12 +50,20 @@ parser.add_argument("--host", default=get_config(config, "server", "host", "0.0.
 # Mode flags
 parser.add_argument("--permute", action="store_true", default=get_config(config, "modes", "permutation", False))
 parser.add_argument("--smt", action="store_true", default=get_config(config, "modes", "smt_monitor", False))
+parser.add_argument("--weekly-permutations", action="store_true", 
+                    default=get_config(config, "modes", "weekly_permutations", False),
+                    help="Run permutations on weekly stack runs (default: baseline only)")
 
-# SMT settings
-parser.add_argument("--username", default=get_config(config, "smt", "username", ""))
-parser.add_argument("--password", default=get_config(config, "smt", "password", ""))
-parser.add_argument("--program", default=get_config(config, "smt", "program", "SOUNDWAVE"),
-                    choices=[p.name for p in Program])
+# Program selection (global setting)
+parser.add_argument("--program", default=config.get("program", "SOUNDWAVE"),
+                    choices=[p.name for p in Program],
+                    help="Program: SOUNDWAVE, GAINSBOROUGH, CANIS")
+
+# SMT settings (env vars: PMM_USERNAME, PMM_PASSWORD)
+parser.add_argument("--username", 
+                    default=os.environ.get("PMM_USERNAME", get_config(config, "smt", "username", "")))
+parser.add_argument("--password", 
+                    default=os.environ.get("PMM_PASSWORD", get_config(config, "smt", "password", "")))
 parser.add_argument("--smt-url", default=get_config(config, "smt", "url", ""))
 
 # APEX settings
@@ -96,28 +104,28 @@ def refresh_queue():
     """Refresh job queue from YAML configuration."""
     global last_hash, current_permutations
 
-    print("🔍 Checking YAML...")
+    logger.debug("Checking YAML...")
     
     try:
         data = load_yaml(args.yaml)
     except Exception as e:
-        print(f"❌ YAML error: {e}")
+        logger.error(f"YAML error: {e}")
         return
 
     week = get_current_week()
     groups = data.get(week)
-    print(f"📅 Current week: {week}")
+    logger.debug(f"Current week: {week}")
 
     if not groups:
-        print("⚠️ No data for current week")
+        logger.warning("No data for current week")
         return
 
     current_hash = compute_hash(groups)
     if current_hash == last_hash:
-        print("⏳ No change")
+        logger.debug("No change in YAML")
         return
 
-    print("🔄 Rebuilding job queue...")
+    logger.info("Rebuilding job queue...")
     
     with served_clients_lock:
         served_clients.clear()
@@ -128,7 +136,7 @@ def refresh_queue():
     with permutations_lock:
         current_permutations = get_permutation_names(combos)
         mode = "ON" if args.permute else "OFF"
-        print(f"🔀 Permutation mode {mode}: {len(current_permutations)} items")
+        logger.info(f"Permutation mode {mode}: {len(current_permutations)} items")
 
     with queue_lock:
         while not file_queue.empty():
@@ -144,7 +152,7 @@ def refresh_queue():
     state["last_generation_time"] = datetime.now().isoformat()
     save_persistent_state(state)
 
-    print(f"✅ Jobs loaded: {file_queue.qsize()}")
+    logger.info(f"Jobs loaded: {file_queue.qsize()}")
 
 
 def trigger_scheduling(install_stack=False):
@@ -155,10 +163,13 @@ def trigger_scheduling(install_stack=False):
     try:
         stations = load_stations_config(args.stations)
     except Exception as e:
-        print(f"❌ Error loading stations: {e}")
+        logger.error(f"Error loading stations: {e}")
         return
     
-    schedule_permutations_to_stations(args.apex_url, args.owner, stations, perms, install_stack)
+    schedule_permutations_to_stations(
+        args.apex_url, args.owner, stations, perms, 
+        install_stack, args.weekly_permutations, args.program
+    )
 
 
 # ===========================================
@@ -173,7 +184,7 @@ def monitor_loop():
         
         today = datetime.now().date()
         if today != current_day:
-            print(f"📆 Day changed: {current_day} → {today}")
+            logger.info(f"Day changed: {current_day} → {today}")
             current_day = today
             state = load_persistent_state()
             state["last_processed_day"] = today.isoformat()
@@ -182,7 +193,7 @@ def monitor_loop():
         
         with served_clients_lock:
             if served_clients:
-                print(f"📊 Served clients: {len(served_clients)}")
+                logger.debug(f"Served clients: {len(served_clients)}")
         
         time.sleep(args.monitor_interval)
 
@@ -192,7 +203,7 @@ def smt_loop():
     program_id = Program[args.program]
     
     while True:
-        print("🔍 SMT check...")
+        logger.debug("Checking SMT for stack releases...")
         if check_timeline(args.smt_url, args.username, args.password, program_id):
             trigger_scheduling(install_stack=True)
         time.sleep(args.smt_interval)
@@ -222,7 +233,7 @@ def get_next_afc_file():
     with served_clients_lock:
         served_clients.append((timestamp, client_ip, filename))
     
-    print(f"📥 [{timestamp}] Job served: {filename} → {client_ip}")
+    logger.info(f"Job served: {filename} → {client_ip}")
     
     return jsonify({"status": "ok", "week": week, "file": filename, "content": content})
 
@@ -231,10 +242,12 @@ def get_next_afc_file():
 # Main
 # ===========================================
 if __name__ == "__main__":
-    print("🚀 Starting PMM Server...")
-    print(f"   Port: {args.port}")
-    print(f"   Permutation mode: {args.permute}")
-    print(f"   SMT monitor: {args.smt}")
+    logger.info("Starting PMM Server...")
+    logger.info(f"  Program: {args.program}")
+    logger.info(f"  Port: {args.port}")
+    logger.info(f"  Permutation mode: {args.permute}")
+    logger.info(f"  SMT monitor: {args.smt}")
+    logger.info(f"  Weekly permutations: {args.weekly_permutations}")
     
     refresh_queue()
     

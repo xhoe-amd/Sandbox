@@ -9,6 +9,8 @@ from enum import IntEnum
 import requests
 from requests_ntlm import HttpNtlmAuth
 
+from .config_loader import logger
+
 
 # ===========================================
 # Program Enum
@@ -17,6 +19,7 @@ class Program(IntEnum):
     """
     Enumeration of supported program IDs for SMT monitoring.
     """
+    MAGNUS = 1            # Placeholder - ID TBD
     GAINSBOROUGH = 1434
     SOUNDWAVE = 1427
     CANIS = 1430
@@ -80,12 +83,12 @@ def check_timeline(smt_url, username, password, program_id):
         info = data.get("info", [])
 
         if info:
-            print("🚨 Stack release found")
+            logger.info("Stack release found!")
             return True
         else:
-            print("✅ No release")
+            logger.debug("No stack release")
             return False
 
     except Exception as e:
-        print(f"⚠️ SMT error: {e}")
+        logger.warning(f"SMT error: {e}")
         return False
