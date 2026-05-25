@@ -19,13 +19,15 @@ Author: xhoe@amd.com
 
 import argparse
 import json
+import logging
 import os
 import time
 from datetime import datetime, date
 import requests
 
+
 # =========================
-# State file for persistence
+# Directory and file paths
 # =========================
 # Use %LOCALAPPDATA% for Windows (standard location for per-user app data)
 # Falls back to user home directory on other platforms
@@ -36,7 +38,48 @@ else:  # Linux/Mac
     APP_DATA_DIR = os.path.join(os.path.expanduser('~'), f'.{APP_NAME.lower()}')
 
 os.makedirs(APP_DATA_DIR, exist_ok=True)
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(APP_DATA_DIR, "scheduler_state.json")
+LOG_FILE_APPDATA = os.path.join(APP_DATA_DIR, "stack_install_scheduler.log")
+LOG_FILE_LOCAL = os.path.join(SCRIPT_DIR, "stack_install_scheduler.log")
+
+
+# =========================
+# Logging Setup
+# =========================
+def setup_logging(level=logging.INFO):
+    """Configure logging to console and two files."""
+    log_format = '%(asctime)s [ %(levelname)s ] %(message)s'
+    date_format = '%Y-%m-%d %H:%M:%S'
+    
+    log = logging.getLogger('scheduler')
+    log.setLevel(level)
+    
+    if log.handlers:
+        return log
+    
+    formatter = logging.Formatter(log_format, date_format)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    log.addHandler(console_handler)
+    
+    # File handler - AppData (persistent)
+    appdata_handler = logging.FileHandler(LOG_FILE_APPDATA, encoding='utf-8')
+    appdata_handler.setFormatter(formatter)
+    log.addHandler(appdata_handler)
+    
+    # File handler - Local directory (convenient)
+    local_handler = logging.FileHandler(LOG_FILE_LOCAL, encoding='utf-8')
+    local_handler.setFormatter(formatter)
+    log.addHandler(local_handler)
+    
+    return log
+
+
+logger = setup_logging()
 
 # =========================
 # Subscription configurations
@@ -124,10 +167,10 @@ def schedule_apex_job(subscription_id, job_name, test_queue):
 
     try:
         response = requests.post(args.apex_url, data=data, timeout=30)
-        print(f"📤 APEX Job: {job_name} → {response.status_code}")
+        logger.info(f"APEX Job: {job_name} → {response.status_code}")
         return response.status_code == 200
     except Exception as e:
-        print(f"❌ Error scheduling job: {e}")
+        logger.error(f"Error scheduling job: {e}")
         return False
 
 
@@ -141,7 +184,7 @@ def schedule_weekend_jobs():
     Returns:
         bool: True if all jobs were scheduled successfully, False if any failed.
     """
-    print("🚀 Scheduling weekend jobs...")
+    logger.info("Scheduling weekend jobs...")
     
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S MYT')
     scheduled = 0
@@ -152,7 +195,7 @@ def schedule_weekend_jobs():
         test_queue = sub["test_queue"]
         job_name = f"{sub['name_prefix']} {timestamp}"
         
-        print(f"📌 Scheduling: {job_name} (Sub ID: {subscription_id}, Queue: {test_queue})")
+        logger.info(f"Scheduling: {job_name} (Sub ID: {subscription_id}, Queue: {test_queue})")
         
         success = schedule_apex_job(subscription_id, job_name, test_queue)
         
@@ -161,9 +204,10 @@ def schedule_weekend_jobs():
         else:
             failed += 1
     
-    print(f"\n📊 Scheduling Summary:")
-    print(f"   Successfully Scheduled: {scheduled}")
-    print(f"   Failed: {failed}")
+    logger.info("Scheduling Summary:")
+    logger.info(f"  Successfully Scheduled: {scheduled}")
+    if failed > 0:
+        logger.warning(f"  Failed: {failed}")
     
     # Return True only if all jobs succeeded
     all_success = (failed == 0 and scheduled > 0)
@@ -195,10 +239,10 @@ def load_last_scheduled_date():
                 date_str = state.get("last_scheduled_date")
                 if date_str:
                     loaded_date = date.fromisoformat(date_str)
-                    print(f"📂 Loaded state: Last scheduled on {loaded_date}")
+                    logger.debug(f"Loaded state: Last scheduled on {loaded_date}")
                     return loaded_date
     except Exception as e:
-        print(f"⚠️ Could not load state file: {e}")
+        logger.warning(f"Could not load state file: {e}")
     return None
 
 
@@ -213,9 +257,9 @@ def save_last_scheduled_date(scheduled_date):
         state = {"last_scheduled_date": scheduled_date.isoformat()}
         with open(STATE_FILE, 'w') as f:
             json.dump(state, f, indent=2)
-        print(f"💾 Saved state: Last scheduled on {scheduled_date}")
+        logger.debug(f"Saved state: Last scheduled on {scheduled_date}")
     except Exception as e:
-        print(f"⚠️ Could not save state file: {e}")
+        logger.warning(f"Could not save state file: {e}")
 
 
 # =========================
@@ -226,13 +270,12 @@ def main():
     Main loop that monitors for weekends and schedules jobs.
     Schedules once per weekend day when detected.
     """
-    print("🚀 Weekend Scheduler Started")
-    print(f"   Check interval: {args.check_interval} seconds")
-    print(f"   APEX URL: {args.apex_url}")
-    print(f"   Jobs to schedule:")
+    logger.info("Weekend Scheduler Started")
+    logger.info(f"  Check interval: {args.check_interval} seconds")
+    logger.info(f"  APEX URL: {args.apex_url}")
+    logger.info("  Jobs to schedule:")
     for sub in SUBSCRIPTIONS:
-        print(f"      - {sub['subscription_id']}: {sub['name_prefix']} → {sub['test_queue']}")
-    print("")
+        logger.info(f"    - {sub['subscription_id']}: {sub['name_prefix']} → {sub['test_queue']}")
     
     # Track if we've already scheduled for today (load from persistent state)
     last_scheduled_date = load_last_scheduled_date()
@@ -241,31 +284,30 @@ def main():
         now = datetime.now()
         today = now.date()
         
-        print(f"⏰ [{now.strftime('%Y-%m-%d %H:%M:%S')}] Checking...")
+        logger.debug(f"Checking day...")
         
         # Check if it's weekend
         if is_weekend():
             day_name = now.strftime("%A")
-            print(f"📅 Today is {day_name} (Weekend)")
+            logger.info(f"Today is {day_name} (Weekend)")
             
             # Schedule if we haven't scheduled today
             if last_scheduled_date != today:
-                print(f"🚀 It's {day_name}! Scheduling jobs...")
+                logger.info(f"It's {day_name}! Scheduling jobs...")
                 success = schedule_weekend_jobs()
                 
                 if success:
                     last_scheduled_date = today
                     save_last_scheduled_date(today)
-                    print(f"✅ Scheduled for {today}. Will not schedule again today.")
+                    logger.info(f"Scheduled for {today}. Will not schedule again today.")
                 else:
-                    print(f"❌ Scheduling failed. Will retry on next check.")
+                    logger.error("Scheduling failed. Will retry on next check.")
             else:
-                print(f"⏳ Already scheduled for today ({today})")
+                logger.debug(f"Already scheduled for today ({today})")
         else:
             day_name = now.strftime("%A")
-            print(f"📅 Today is {day_name} (Weekday - not scheduling)")
+            logger.debug(f"Today is {day_name} (Weekday - not scheduling)")
         
-        print("")
         time.sleep(args.check_interval)
 
 
