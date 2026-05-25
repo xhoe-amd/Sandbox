@@ -7,7 +7,7 @@ Handles scheduling APEX jobs for weekly stack installations and daily runs.
 from datetime import datetime
 import requests
 
-from .config_loader import config, get_config
+from .config_loader import config, get_config, logger
 
 
 # ===========================================
@@ -45,85 +45,20 @@ def schedule_single_apex_job(apex_url, owner, subscription_id, job_name, priorit
 
     try:
         response = requests.post(apex_url, data=data, timeout=30)
-        print(f"📤 APEX Job: {job_name} → {response.status_code}")
+        logger.info(f"APEX Job: {job_name} → {response.status_code}")
         return response.status_code == 200
     except Exception as e:
-        print(f"❌ Error scheduling job: {e}")
+        logger.error(f"Error scheduling job: {e}")
         return False
 
 
-def schedule_apex_job(apex_url, owner, subscription_id, station_name, permutation_name, install_stack=False):
+def schedule_permutations_to_stations(apex_url, owner, stations, permutations, install_stack=False, weekly_permutations=False, program="SOUNDWAVE"):
     """
-    Schedule APEX jobs for a station based on the run type (weekly or daily).
+    Schedule APEX jobs to stations.
     
-    For each station/permutation, schedules TWO jobs:
-    1. Baseline job: Stack installation (weekly) or BIOS reset (daily) + baseline workloads
-    2. Feature job: Feature enablement (with pmm_client.py) + feature workloads
-    
-    Each job type has its own priority:
-    - Weekly: baseline=1, feature=2
-    - Daily: baseline=4, feature=5
-    
-    Args:
-        apex_url (str): The APEX API endpoint URL.
-        owner (str): Job owner email.
-        subscription_id (str): The APEX subscription ID for the target station.
-        station_name (str): The name of the station to run the job on.
-        permutation_name (str): The name of the feature permutation being tested.
-        install_stack (bool): True = Weekly new stack, False = Daily run
-    
-    Returns:
-        bool: True if all jobs were scheduled successfully, False if any failed.
-    """
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S MYT')
-    
-    # Get config for weekly or daily run
-    apex_config = config.get("apex", {})
-    run_type = "weekly" if install_stack else "daily"
-    run_config = apex_config.get(run_type, {})
-    
-    baseline_config = run_config.get("baseline", {})
-    feature_config = run_config.get("feature", {})
-    
-    run_label = "Weekly Stack" if install_stack else "Daily"
-    print(f"📋 Scheduling {run_label} jobs for {station_name} - {permutation_name}")
-    
-    all_success = True
-    
-    # Job 1: Baseline (stack install or BIOS reset + baseline workloads)
-    baseline_job_name = f"{station_name} - Baseline - {timestamp}"
-    baseline_priority = baseline_config.get("priority", "4")
-    baseline_setup = baseline_config.get("setup_queue", "")
-    baseline_test = baseline_config.get("test_queue", "")
-    
-    print(f"   📌 Job 1 (Baseline, P{baseline_priority}): {baseline_setup} → {baseline_test}")
-    success = schedule_single_apex_job(
-        apex_url, owner, subscription_id, baseline_job_name, baseline_priority, baseline_setup, baseline_test
-    )
-    if not success:
-        all_success = False
-    
-    # Job 2: Feature (feature enablement with pmm_client + workloads)
-    feature_job_name = f"{station_name} - {permutation_name} - {timestamp}"
-    feature_priority = feature_config.get("priority", "5")
-    feature_setup = feature_config.get("setup_queue", "")
-    feature_test = feature_config.get("test_queue", "")
-    
-    print(f"   📌 Job 2 (Feature, P{feature_priority}): {feature_setup} → {feature_test}")
-    success = schedule_single_apex_job(
-        apex_url, owner, subscription_id, feature_job_name, feature_priority, feature_setup, feature_test
-    )
-    if not success:
-        all_success = False
-    
-    return all_success
-
-
-def schedule_permutations_to_stations(apex_url, owner, stations, permutations, install_stack=False):
-    """
-    Distribute feature permutations across available stations and schedule APEX jobs.
-    
-    Implements round-robin distribution of permutations to stations.
+    Flow:
+    - Weekly (install_stack=True): Baseline only (unless weekly_permutations=True)
+    - Daily (install_stack=False): Baseline + all feature permutations
     
     Args:
         apex_url (str): The APEX API endpoint URL.
@@ -131,66 +66,114 @@ def schedule_permutations_to_stations(apex_url, owner, stations, permutations, i
         stations (dict): Stations config from stations.yaml.
         permutations (list): List of permutation names to schedule.
         install_stack (bool): True = Weekly new stack, False = Daily run
+        weekly_permutations (bool): If True, run permutations on weekly runs too
+        program (str): Program name (SOUNDWAVE, GAINSBOROUGH, CANIS)
     
     Returns:
         dict: Summary of scheduling results.
     """
-    print("🚀 Starting permutation distribution to stations...")
-    
-    if not permutations:
-        print("⚠️ No permutations to schedule")
-        return {"total_permutations": 0, "total_stations": 0, "scheduled": 0, "failed": 0, "assignments": []}
+    logger.info("Starting job scheduling...")
+    logger.info(f"Program: {program}")
     
     if not stations:
-        print("⚠️ No stations configured")
-        return {"total_permutations": len(permutations), "total_stations": 0, "scheduled": 0, "failed": 0, "assignments": []}
+        logger.warning("No stations configured")
+        return {"baseline_scheduled": False, "feature_scheduled": 0, "failed": 0}
     
-    # Convert stations dict to list for round-robin assignment
+    # Get config for program and run type
+    apex_config = config.get("apex", {})
+    programs_config = apex_config.get("programs", {})
+    program_config = programs_config.get(program, {})
+    
+    if not program_config:
+        logger.warning(f"No config found for program: {program}")
+        return {"baseline_scheduled": False, "feature_scheduled": 0, "failed": 0}
+    
+    run_type = "weekly" if install_stack else "daily"
+    run_config = program_config.get(run_type, {})
+    
+    baseline_config = run_config.get("baseline", {})
+    feature_config = run_config.get("feature", {})
+    
+    run_label = "Weekly Stack" if install_stack else "Daily"
+    logger.info(f"Run type: {run_label}")
+    
+    # Convert stations dict to list
     station_list = [
         (ip, info["subscription_id"], info["name"])
         for ip, info in stations.items()
     ]
-    
-    num_permutations = len(permutations)
     num_stations = len(station_list)
     
-    print(f"📊 Permutations: {num_permutations}, Stations: {num_stations}")
-    
-    if num_permutations <= num_stations:
-        print(f"✅ Permutations ({num_permutations}) ≤ Stations ({num_stations}): One job per station")
-    else:
-        print(f"⚠️ Permutations ({num_permutations}) > Stations ({num_stations}): Round-robin distribution")
-    
-    # Distribute permutations to stations in round-robin fashion
-    assignments = []
-    scheduled = 0
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S MYT')
+    baseline_success = True
+    feature_scheduled = 0
     failed = 0
     
-    for i, perm_name in enumerate(permutations):
-        station_index = i % num_stations
-        ip, subscription_id, station_name = station_list[station_index]
-        
-        print(f"📌 Assigning '{perm_name}' to {station_name} (IP: {ip})")
-        
-        success = schedule_apex_job(apex_url, owner, subscription_id, station_name, perm_name, install_stack)
-        
-        if success:
-            scheduled += 1
-        else:
-            failed += 1
-        
-        assignments.append((station_name, perm_name, success))
+    # =========================================
+    # Step 1: Schedule ONE baseline job
+    # =========================================
+    logger.info("Step 1: Scheduling baseline job (ONCE)")
+    baseline_priority = baseline_config.get("priority", "4")
+    baseline_setup = baseline_config.get("setup_queue", "")
+    baseline_test = baseline_config.get("test_queue", "")
     
-    print(f"\n📊 Scheduling Summary:")
-    print(f"   Total Permutations: {num_permutations}")
-    print(f"   Total Stations: {num_stations}")
-    print(f"   Successfully Scheduled: {scheduled}")
-    print(f"   Failed: {failed}")
+    # Use first station for baseline job
+    ip, subscription_id, station_name = station_list[0]
+    baseline_job_name = f"Baseline - {timestamp}"
+    
+    logger.info(f"  Baseline (P{baseline_priority}): {baseline_setup} → {baseline_test}")
+    baseline_success = schedule_single_apex_job(
+        apex_url, owner, subscription_id, baseline_job_name, baseline_priority, baseline_setup, baseline_test
+    )
+    
+    if not baseline_success:
+        logger.error("  Baseline job failed")
+    
+    # =========================================
+    # Step 2: Schedule feature jobs for each permutation
+    # =========================================
+    # Skip permutations for weekly unless weekly_permutations flag is enabled
+    skip_permutations = install_stack and not weekly_permutations
+    
+    if skip_permutations:
+        logger.info("Weekly run: Skipping permutations (baseline only)")
+        logger.info("  Set weekly_permutations=true in config to enable")
+    elif not permutations:
+        logger.warning("No permutations to schedule feature jobs")
+    else:
+        logger.info(f"Step 2: Scheduling feature jobs ({len(permutations)} permutations)")
+        feature_priority = feature_config.get("priority", "5")
+        feature_setup = feature_config.get("setup_queue", "")
+        feature_test = feature_config.get("test_queue", "")
+        
+        for i, perm_name in enumerate(permutations):
+            # Round-robin distribution across stations
+            station_index = i % num_stations
+            ip, subscription_id, station_name = station_list[station_index]
+            
+            feature_job_name = f"{station_name} - {perm_name} - {timestamp}"
+            logger.info(f"  {perm_name} → {station_name} (P{feature_priority})")
+            
+            success = schedule_single_apex_job(
+                apex_url, owner, subscription_id, feature_job_name, feature_priority, feature_setup, feature_test
+            )
+            if success:
+                feature_scheduled += 1
+            else:
+                failed += 1
+    
+    # =========================================
+    # Summary
+    # =========================================
+    logger.info("Scheduling Summary:")
+    logger.info(f"  Baseline job: {'Success' if baseline_success else 'Failed'}")
+    logger.info(f"  Feature jobs scheduled: {feature_scheduled}/{len(permutations) if permutations else 0}")
+    if failed > 0:
+        logger.warning(f"  Failed: {failed}")
     
     return {
-        "total_permutations": num_permutations,
-        "total_stations": num_stations,
-        "scheduled": scheduled,
-        "failed": failed,
-        "assignments": assignments
+        "baseline_scheduled": baseline_success,
+        "feature_scheduled": feature_scheduled,
+        "total_permutations": len(permutations) if permutations else 0,
+        "failed": failed
     }
