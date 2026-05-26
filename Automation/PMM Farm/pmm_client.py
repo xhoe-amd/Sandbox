@@ -40,6 +40,7 @@ else:  # Linux/Mac
 
 os.makedirs(APP_DATA_DIR, exist_ok=True)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PERMS_DIR = os.path.join(APP_DATA_DIR, "pmm_farm_perms")
 
 
 # =========================
@@ -76,8 +77,8 @@ parser.add_argument(
 
 parser.add_argument(
     "--save-dir",
-    default="received",
-    help="Directory to save received files (default: received)"
+    default=PERMS_DIR,
+    help=f"Directory to save received files (default: {PERMS_DIR})"
 )
 
 parser.add_argument(
