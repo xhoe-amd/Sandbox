@@ -81,9 +81,9 @@ def extract_pairs(groups):
     """
     Extract feature key-value pairs from YAML groups.
     
-    Processes feature definitions from the YAML structure, extracting the
-    final segment of dotted paths as the feature name. Features with values
-    are formatted as "name=value", features without values (null) are just "name".
+    Processes feature definitions from the YAML structure, keeping the full
+    dotted path as the feature name. Features with values are formatted as 
+    "name=value", features without values (null) are just "name".
     
     Args:
         groups (list): List of dictionaries containing feature definitions.
@@ -94,8 +94,7 @@ def extract_pairs(groups):
     pairs = []
     for group in groups:
         for k, v in group.items():
-            key = k.split(".")[-1]
-            pairs.append(key if v is None else f"{key}={v}")
+            pairs.append(k if v is None else f"{k}={v}")
     return sorted(set(pairs))
 
 
