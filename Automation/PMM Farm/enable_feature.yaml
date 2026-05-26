@@ -1,5 +1,5 @@
-2026-W21:
+2026-W22:
   - 
-    test.test2.adc: "0x00"
-    test.x.y: "0x01"
-    flag: null
+    AMDCBS.SMUDebugOptions.SMUFeatures.OFFCD: "0x00"
+    AMDCBS.SMUDebugOptions.SMUFeatures.DCFCLKDPM: "0x00"
+    AMDCBS.SMUDebugOptions.SMUFeatures.GFXDPM: "0x00"
