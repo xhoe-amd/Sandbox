@@ -79,7 +79,7 @@ def compute_hash(data):
 # ===========================================
 def extract_pairs(groups):
     """
-    Extract feature key-value pairs from YAML groups.
+    Extract feature key-value pairs from YAML groups (flattened).
     
     Processes feature definitions from the YAML structure, keeping the full
     dotted path as the feature name. Features with values are formatted as 
@@ -96,6 +96,28 @@ def extract_pairs(groups):
         for k, v in group.items():
             pairs.append(k if v is None else f"{k}={v}")
     return sorted(set(pairs))
+
+
+def extract_pairs_per_group(groups):
+    """
+    Extract feature key-value pairs from YAML groups, keeping each dictionary separate.
+    
+    Each dictionary in groups becomes a separate list of feature strings.
+    
+    Args:
+        groups (list): List of dictionaries containing feature definitions.
+    
+    Returns:
+        list: List of lists, where each inner list contains features from one dictionary.
+    """
+    result = []
+    for group in groups:
+        pairs = []
+        for k, v in group.items():
+            pairs.append(k if v is None else f"{k}={v}")
+        if pairs:
+            result.append(sorted(pairs))
+    return result
 
 
 def generate_combinations(values):
@@ -122,16 +144,18 @@ def process_week_features(groups, permutation_mode=False):
     
     Args:
         groups (list): Feature groups from the YAML.
-        permutation_mode (bool): If True, generate all combinations.
+        permutation_mode (bool): If True, generate all combinations of individual features.
+                                 If False, each dictionary becomes one set.
     
     Returns:
         list: List of feature combinations.
     """
-    pairs = extract_pairs(groups)
-    
     if not permutation_mode:
-        return [[p] for p in pairs]
+        # Each dictionary in YAML becomes one set
+        return extract_pairs_per_group(groups)
     
+    # Permutation mode: generate all combinations of individual features
+    pairs = extract_pairs(groups)
     return generate_combinations(pairs)
 
 
@@ -143,6 +167,7 @@ def write_files(output_dir, week, combinations):
     Write job files for each feature combination.
     
     Creates a directory for the week and writes one text file per combination.
+    File content contains full dotted names, filename uses trimmed (last segment) names.
     
     Args:
         output_dir (str): Base output directory.
@@ -161,10 +186,12 @@ def write_files(output_dir, week, combinations):
 
     files = []
     for combo in combinations:
-        name = "-".join(c.split("=")[0] for c in combo)
+        # Use last segment of each key for filename (trimmed)
+        name = "-".join(c.split("=")[0].split(".")[-1] for c in combo)
         filename = f"{name}.txt"
         path = os.path.join(base, filename)
 
+        # Write full names to file content
         with open(path, "w") as f:
             f.write("\n".join(combo))
 
@@ -175,16 +202,17 @@ def write_files(output_dir, week, combinations):
 
 def get_permutation_names(combinations):
     """
-    Convert combinations to permutation names.
+    Convert combinations to permutation names (trimmed/short names).
     
     Args:
         combinations (list): List of feature combinations.
     
     Returns:
-        list: List of permutation name strings.
+        list: List of permutation name strings using last segment of keys.
     """
     names = []
     for combo in combinations:
-        name = "-".join(c.split("=")[0] for c in combo)
+        # Use last segment of each key for permutation name
+        name = "-".join(c.split("=")[0].split(".")[-1] for c in combo)
         names.append(name)
     return names
