@@ -23,8 +23,9 @@ from modules.config_loader import (
     config, get_config, SCRIPT_DIR, logger,
     load_persistent_state, save_persistent_state
 )
+from modules.constants import Program
 from modules.scheduler import schedule_permutations_to_stations
-from modules.smt_monitor import Program, check_timeline
+from modules.smt_monitor import check_timeline
 from modules.yaml_processor import (
     get_current_week, load_yaml, load_stations_config,
     compute_hash, process_week_features, write_files, get_permutation_names
@@ -53,6 +54,10 @@ parser.add_argument("--smt", action="store_true", default=get_config(config, "mo
 parser.add_argument("--weekly-permutations", action="store_true", 
                     default=get_config(config, "modes", "weekly_permutations", False),
                     help="Run permutations on weekly stack runs (default: baseline only)")
+parser.add_argument("--preschedule", action="store_true",
+                    default=get_config(config, "modes", "preschedule", True),
+                    help="Preschedule mode: assign files to specific stations (IP-based). "
+                         "If off, free-for-all mode where any client can get any file.")
 
 # Program selection (global setting)
 parser.add_argument("--program", default=config.get("program", "SOUNDWAVE"),
@@ -85,12 +90,18 @@ file_queue = Queue()
 queue_lock = threading.Lock()
 permutations_lock = threading.Lock()
 served_clients_lock = threading.Lock()
+station_assignments_lock = threading.Lock()
 
 # Load persistent state
 _state = load_persistent_state()
 last_hash = _state.get("last_hash")
 current_permutations = []
 served_clients = []
+
+# Station assignments: IP -> {"daily": [files], "weekly": [files]}
+# Each station has separate queues for daily and weekly jobs
+# Files are served in order: weekly first (higher priority), then daily
+station_assignments = _state.get("station_assignments", {})
 
 # Day tracking - track both current day and last scheduled day
 _last_day_str = _state.get("last_processed_day")
@@ -159,7 +170,42 @@ def refresh_queue():
 
 
 def trigger_scheduling(install_stack=False):
-    """Trigger job scheduling to all stations."""
+    """
+    Trigger job scheduling to all stations and store assignments.
+    
+    Daily and weekly jobs are tracked separately:
+    - Weekly jobs are added to "weekly" queue
+    - Daily jobs are added to "daily" queue
+    - Jobs coexist - weekly doesn't overwrite daily and vice versa
+    """
+    global station_assignments
+    
+    schedule_type = "weekly" if install_stack else "daily"
+    logger.info(f"Scheduling type: {schedule_type.upper()}")
+    
+    # =========================================
+    # Check for leftover files of SAME type
+    # =========================================
+    if args.preschedule:
+        with station_assignments_lock:
+            leftover_count = 0
+            leftover_details = []
+            
+            for ip, queues in station_assignments.items():
+                type_files = queues.get(schedule_type, [])
+                if type_files:
+                    leftover_count += len(type_files)
+                    leftover_details.append(f"  {ip}: {len(type_files)} {schedule_type} files remaining")
+            
+            if leftover_count > 0:
+                logger.warning(f"⚠️  LEFTOVER {schedule_type.upper()} FILES: {leftover_count} files not retrieved by clients!")
+                for detail in leftover_details:
+                    logger.warning(detail)
+                logger.warning(f"    New {schedule_type} scheduling will overwrite previous {schedule_type} assignments.")
+    
+    # =========================================
+    # Proceed with scheduling
+    # =========================================
     with permutations_lock:
         perms = list(current_permutations)
     
@@ -169,10 +215,39 @@ def trigger_scheduling(install_stack=False):
         logger.error(f"Error loading stations: {e}")
         return
     
-    schedule_permutations_to_stations(
+    result = schedule_permutations_to_stations(
         args.apex_url, args.owner, stations, perms, 
-        install_stack, args.weekly_permutations, args.program
+        install_stack, args.weekly_permutations, args.program,
+        preschedule_mode=args.preschedule
     )
+    
+    # Store station assignments for client file serving (only in preschedule mode)
+    if args.preschedule and result and "station_assignments" in result:
+        new_assignments = result["station_assignments"]
+        
+        with station_assignments_lock:
+            # Merge new assignments with existing (don't overwrite other type)
+            for ip, new_files in new_assignments.items():
+                if ip not in station_assignments:
+                    station_assignments[ip] = {"daily": [], "weekly": []}
+                
+                # Replace only the current schedule type, keep the other
+                station_assignments[ip][schedule_type] = new_files
+            
+            logger.info(f"Updated {schedule_type} assignments for {len(new_assignments)} stations")
+            
+            # Log combined status
+            total_daily = sum(len(q.get("daily", [])) for q in station_assignments.values())
+            total_weekly = sum(len(q.get("weekly", [])) for q in station_assignments.values())
+            logger.info(f"  Total pending: {total_daily} daily, {total_weekly} weekly")
+            
+            # Persist station assignments
+            state = load_persistent_state()
+            state["station_assignments"] = station_assignments
+            save_persistent_state(state)
+    elif not args.preschedule:
+        # In free-for-all mode, no assignments are tracked
+        logger.info("Free-for-all mode: No station-specific assignments")
 
 
 # ===========================================
@@ -234,28 +309,94 @@ def smt_loop():
 # ===========================================
 @app.route("/get_next_afc_file")
 def get_next_afc_file():
-    """Get next job from queue and return its content."""
-    with queue_lock:
-        if file_queue.empty():
-            return jsonify({"status": "empty"})
-        week, filename = file_queue.get()
+    """
+    Get next job for the requesting client.
+    
+    Behavior depends on preschedule mode:
+    - Preschedule ON: Only serve files to registered stations with remaining assignments.
+                      Weekly files are served first (higher priority), then daily.
+                      Returns error if IP not registered or no files remaining.
+    - Preschedule OFF: Free-for-all, any client can get next file from queue.
+    """
+    client_ip = request.remote_addr
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    week = get_current_week()
+    filename = None
+    job_type = None
+    
+    if args.preschedule:
+        # =========================================
+        # PRESCHEDULE MODE: IP-based assignments
+        # =========================================
+        with station_assignments_lock:
+            # Check if client IP is registered
+            if client_ip not in station_assignments:
+                logger.warning(f"Rejected: {client_ip} not in preschedule list")
+                return jsonify({
+                    "status": "error",
+                    "reason": "ip_not_registered",
+                    "message": f"IP {client_ip} is not registered in the preschedule list"
+                }), 403
+            
+            client_queues = station_assignments[client_ip]
+            weekly_files = client_queues.get("weekly", [])
+            daily_files = client_queues.get("daily", [])
+            
+            # Check if there are any files remaining for this client
+            if not weekly_files and not daily_files:
+                logger.info(f"No more files for {client_ip}")
+                return jsonify({
+                    "status": "empty",
+                    "reason": "no_files_remaining",
+                    "message": f"No more files assigned to IP {client_ip}"
+                })
+            
+            # Serve weekly files first (higher priority), then daily
+            if weekly_files:
+                perm_name = weekly_files.pop(0)
+                job_type = "weekly"
+                remaining = f"{len(weekly_files)} weekly, {len(daily_files)} daily"
+            else:
+                perm_name = daily_files.pop(0)
+                job_type = "daily"
+                remaining = f"{len(weekly_files)} weekly, {len(daily_files)} daily"
+            
+            filename = f"{perm_name}.txt"
+            
+            # Persist updated assignments
+            state = load_persistent_state()
+            state["station_assignments"] = station_assignments
+            save_persistent_state(state)
+            
+            logger.info(f"[{job_type.upper()}] {filename} → {client_ip} ({remaining} remaining)")
+    else:
+        # =========================================
+        # FREE-FOR-ALL MODE: Any client can get files
+        # =========================================
+        with queue_lock:
+            if file_queue.empty():
+                return jsonify({"status": "empty"})
+            week, filename = file_queue.get()
+        job_type = "queue"
+        logger.info(f"Queue job: {filename} → {client_ip} (free-for-all mode)")
     
     path = os.path.join(args.output, week, filename)
     if not os.path.exists(path):
-        return jsonify({"status": "error", "reason": "file_not_found"})
+        return jsonify({"status": "error", "reason": "file_not_found", "file": filename}), 404
     
     with open(path) as f:
         content = f.read()
     
-    client_ip = request.remote_addr
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
     with served_clients_lock:
-        served_clients.append((timestamp, client_ip, filename))
+        served_clients.append((timestamp, client_ip, filename, job_type))
     
-    logger.info(f"Job served: {filename} → {client_ip}")
-    
-    return jsonify({"status": "ok", "week": week, "file": filename, "content": content})
+    return jsonify({
+        "status": "ok", 
+        "week": week, 
+        "file": filename, 
+        "content": content,
+        "job_type": job_type
+    })
 
 
 # ===========================================
@@ -266,6 +407,7 @@ if __name__ == "__main__":
     logger.info(f"  Program: {args.program}")
     logger.info(f"  Port: {args.port}")
     logger.info(f"  Permutation mode: {args.permute}")
+    logger.info(f"  Preschedule mode: {args.preschedule}")
     logger.info(f"  SMT monitor: {args.smt}")
     logger.info(f"  Weekly permutations: {args.weekly_permutations}")
     
