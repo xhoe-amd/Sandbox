@@ -1,0 +1,162 @@
+# ===========================================
+# PMM Server Configuration
+# ===========================================
+# This file contains all configurable settings for the PMM Server.
+# Command-line arguments will override these settings if provided.
+
+# -------------------------------------------
+# Application Settings
+# -------------------------------------------
+app:
+  name: "APEXScheduler"           # Application name (used for log directories)
+  log_filename: "pmm_server.log"  # Server log filename
+  state_filename: "server_state.json"  # State persistence filename
+  log_level: "INFO"               # Logging level: DEBUG, INFO, WARNING, ERROR
+
+# -------------------------------------------
+# Program Selection (affects SMT & APEX queues)
+# -------------------------------------------
+# Options: MAGNUS, GAINSBOROUGH, SOUNDWAVE, CANIS
+# Program IDs are defined in modules/constants.py
+program: "SOUNDWAVE"
+
+# -------------------------------------------
+# Server Settings
+# -------------------------------------------
+server:
+  host: "0.0.0.0"
+  port: 5000
+
+# -------------------------------------------
+# File Paths (relative to script directory)
+# -------------------------------------------
+paths:
+  feature_yaml: "enable_feature.yaml"
+  stations_yaml: "stations.yaml"
+  output_dir: "output"
+
+# -------------------------------------------
+# Mode Flags
+# -------------------------------------------
+modes:
+  permutation: false      # Enable permutation mode (generate all feature combinations)
+  smt_monitor: false      # Enable SMT monitoring for stack releases
+  weekly_permutations: false  # Run permutations on weekly stack runs (default: baseline only)
+  preschedule: true       # Enable preschedule mode:
+                          #   true  = Files are assigned to specific stations (IP-based)
+                          #           Only registered stations can request files
+                          #   false = Free-for-all, any client can get any file from queue
+
+# -------------------------------------------
+# Timing Intervals (in seconds)
+# -------------------------------------------
+intervals:
+  yaml_monitor: 30        # How often to check YAML for changes
+  smt_check: 3600         # How often to check SMT for new releases (1 hour)
+  apex_timeout: 30        # APEX API request timeout
+
+# -------------------------------------------
+# SMT (Stack Management Tool) Settings
+# -------------------------------------------
+smt:
+  url: "http://atlstmapp01.amd.com:1234/api/getStacksForTimeline"
+  username: ""            # SMT username (NTLM auth)
+  password: ""            # SMT password (NTLM auth)
+
+# -------------------------------------------
+# APEX Job Scheduler Settings
+# -------------------------------------------
+apex:
+  url: "http://apexlegacy.amd.com/jobs"
+  owner: "xhoe@amd.com"
+  execution_label: "xhoe_scheduler_testing"
+  timestamp_format: "%Y-%m-%d %H:%M:%S MYT"  # Timestamp format for job names
+  
+  # Default job parameters (can be overridden per program)
+  job_defaults:
+    is_persistent: "false"
+    completion_criteria: "AllTestStations"
+    test_loops: "1"
+    argument_overrides: ""
+  
+  # Queue names per program (selected based on global 'program' setting)
+  programs:
+    SOUNDWAVE:
+      weekly:
+        baseline:
+          priority: "1"
+          setup_queue: "SWV - Weekly Stack Installation"
+          test_queue: "Scheduler Test - Setup"
+        feature:
+          priority: "2"
+          setup_queue: "MGN PMM Farm - PMM Features Enablement"
+          test_queue: "Scheduler Test - Setup"
+      daily:
+        baseline:
+          priority: "4"
+          setup_queue: "Scheduler Test - Setup"
+          test_queue: "Scheduler Test - Setup"
+        feature:
+          priority: "5"
+          setup_queue: "MGN PMM Farm - PMM Features Enablement"
+          test_queue: "Scheduler Test - Setup"
+    
+    GAINSBOROUGH:
+      weekly:
+        baseline:
+          priority: "1"
+          setup_queue: "GBR PMM Farm - Stack Installation"
+          test_queue: "GBR PMM Farm - Workloads"
+        feature:
+          priority: "2"
+          setup_queue: "GBR PMM Farm - PMM Features Enablement"
+          test_queue: "GBR PMM Farm - Workloads"
+      daily:
+        baseline:
+          priority: "4"
+          setup_queue: "GBR PMM Farm - Reset BIOS"
+          test_queue: "GBR PMM Farm - Workloads"
+        feature:
+          priority: "5"
+          setup_queue: "GBR PMM Farm - PMM Features Enablement"
+          test_queue: "GBR PMM Farm - Workloads"
+    
+    MAGNUS:
+      weekly:
+        baseline:
+          priority: "1"
+          setup_queue: "MGN PMM Farm - Stack Installation"
+          test_queue: "MGN PMM Farm - Workloads"
+        feature:
+          priority: "2"
+          setup_queue: "MGN PMM Farm - PMM Features Enablement"
+          test_queue: "MGN PMM Farm - Workloads"
+      daily:
+        baseline:
+          priority: "4"
+          setup_queue: "MGN PMM Farm - Reset BIOS"
+          test_queue: "MGN PMM Farm - Workloads"
+        feature:
+          priority: "5"
+          setup_queue: "MGN PMM Farm - PMM Features Enablement"
+          test_queue: "MGN PMM Farm - Workloads"
+    
+    # CANIS:
+    #   weekly:
+    #     baseline:
+    #       priority: "1"
+    #       setup_queue: "CAN - Weekly Stack Installation"
+    #       test_queue: "CAN - Weekly Baseline Workloads"
+    #     feature:
+    #       priority: "2"
+    #       setup_queue: "CAN - Feature Enablement"
+    #       test_queue: "CAN - Feature Workloads"
+    #   daily:
+    #     baseline:
+    #       priority: "4"
+    #       setup_queue: "CAN - BIOS Reset"
+    #       test_queue: "CAN - Daily Baseline Workloads"
+    #     feature:
+    #       priority: "5"
+    #       setup_queue: "CAN - Feature Enablement"
+    #       test_queue: "CAN - Feature Workloads"

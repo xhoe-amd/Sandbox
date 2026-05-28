@@ -1,0 +1,33 @@
+# ===========================================
+# PMM Client Configuration
+# ===========================================
+# This file contains configurable settings for the PMM Client.
+# This file is OPTIONAL - the client will use hardcoded defaults if not found.
+# Command-line arguments will override these settings if provided.
+
+# -------------------------------------------
+# Application Settings
+# -------------------------------------------
+app:
+  name: "APEXScheduler"           # Application name (used for log directories)
+  perms_dirname: "pmm_farm_perms" # Directory name for received permission files
+
+# -------------------------------------------
+# Connection Settings
+# -------------------------------------------
+connection:
+  host: "10.148.216.73"           # Default server host IP
+  port: 5000                      # Default server port
+
+# -------------------------------------------
+# Timing Settings
+# -------------------------------------------
+timing:
+  retry_interval: 5               # Seconds between retries on error
+  request_timeout: 10             # Request timeout in seconds
+
+# -------------------------------------------
+# Output Settings
+# -------------------------------------------
+output:
+  filename: "enable_pmm_features.txt"  # Output filename for received jobs
