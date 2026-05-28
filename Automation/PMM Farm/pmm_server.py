@@ -92,9 +92,11 @@ last_hash = _state.get("last_hash")
 current_permutations = []
 served_clients = []
 
-# Day tracking
+# Day tracking - track both current day and last scheduled day
 _last_day_str = _state.get("last_processed_day")
+_last_scheduled_str = _state.get("last_scheduled_day")
 current_day = date.fromisoformat(_last_day_str) if _last_day_str else datetime.now().date()
+last_scheduled_day = date.fromisoformat(_last_scheduled_str) if _last_scheduled_str else None
 
 
 # ===========================================
@@ -178,19 +180,36 @@ def trigger_scheduling(install_stack=False):
 # ===========================================
 def monitor_loop():
     """Monitor YAML for changes and detect day changes."""
-    global current_day
+    global current_day, last_scheduled_day
     
     while True:
         refresh_queue()
         
         today = datetime.now().date()
+        
+        # Check if we need to schedule today (day changed OR not scheduled yet today)
+        should_schedule = False
+        
         if today != current_day:
             logger.info(f"Day changed: {current_day} → {today}")
             current_day = today
+            should_schedule = True
+        elif last_scheduled_day != today:
+            # Server restarted but today not scheduled yet
+            logger.info(f"Server restarted, checking if scheduling needed for {today}")
+            should_schedule = True
+        
+        if should_schedule and last_scheduled_day != today:
+            logger.info(f"Triggering daily scheduling for {today}")
+            trigger_scheduling(install_stack=False)
+            
+            # Update both day tracking and scheduled day
+            last_scheduled_day = today
             state = load_persistent_state()
             state["last_processed_day"] = today.isoformat()
+            state["last_scheduled_day"] = today.isoformat()
             save_persistent_state(state)
-            trigger_scheduling(install_stack=False)
+            logger.info(f"Scheduling completed and saved for {today}")
         
         with served_clients_lock:
             if served_clients:
