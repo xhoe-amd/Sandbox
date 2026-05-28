@@ -1,5 +1,15 @@
 2026-W22:
   - 
     AMDCBS.SMUDebugOptions.SMUFeatures.OFFCD: "0x00"
+  - 
+    AMDCBS.SMUDebugOptions.SMUFeatures.OFFCD: "0x00"
+    AMDCBS.SMUDebugOptions.SMUFeatures.DCFCLKDPM: "0x00"
+  - 
+    AMDCBS.SMUDebugOptions.SMUFeatures.OFFCD: "0x00"
     AMDCBS.SMUDebugOptions.SMUFeatures.DCFCLKDPM: "0x00"
     AMDCBS.SMUDebugOptions.SMUFeatures.GFXDPM: "0x00"
+  - 
+    AMDCBS.SMUDebugOptions.SMUFeatures.OFFCD: "0x00"
+    AMDCBS.SMUDebugOptions.SMUFeatures.DCFCLKDPM: "0x00"
+    AMDCBS.SMUDebugOptions.SMUFeatures.GFXDPM: "0x00"
+    AMDCBS.SMUDebugOptions.SMUFeatures.LOWPOWERDCNCLKS: "0x00"
