@@ -2,3 +2,4 @@
 # PMM Farm SUT Client
 
 requests>=2.25.0
+pyyaml>=5.0

@@ -1,5 +1,5 @@
-# Requirements for combined_server.py
-# PMM Farm Unified Host Server
+# Requirements for pmm_server.py
+# PMM Farm Host Server
 
 flask>=2.0.0
 pyyaml>=5.0
