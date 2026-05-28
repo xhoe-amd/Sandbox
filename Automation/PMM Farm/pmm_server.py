@@ -120,9 +120,10 @@ def refresh_queue():
         logger.warning("No data for current week")
         return
 
-    current_hash = compute_hash(groups)
+    # Include permutation mode in hash so mode changes trigger regeneration
+    current_hash = compute_hash({"groups": groups, "permute": args.permute})
     if current_hash == last_hash:
-        logger.debug("No change in YAML")
+        logger.debug("No change in YAML or mode")
         return
 
     logger.info("Rebuilding job queue...")
