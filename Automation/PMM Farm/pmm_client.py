@@ -322,16 +322,27 @@ def main():
         job_type_label = job_type.upper() if job_type else "UNKNOWN"
         logger.info(f"[{SUT_NAME}] Received [{job_type_label}] job: {week}/{filename}")
 
-        # Save locally with configured filename
+        # Save to configured directory (AppData)
         local_path = os.path.join(SAVE_DIR, args.output_file)
-
         try:
             with open(local_path, "w") as f:
                 f.write(content)
             logger.info(f"[{SUT_NAME}] Saved: {local_path}")
         except Exception as e:
-            logger.error(f"[{SUT_NAME}] Failed to save file: {e}")
+            logger.error(f"[{SUT_NAME}] Failed to save file to {local_path}: {e}")
             exit(1)
+        
+        # Also save to C:\{APP_NAME}\{PERMS_DIRNAME}\ (Windows only)
+        if os.name == 'nt':
+            c_drive_dir = os.path.join("C:\\", APP_NAME, PERMS_DIRNAME)
+            os.makedirs(c_drive_dir, exist_ok=True)
+            c_drive_path = os.path.join(c_drive_dir, args.output_file)
+            try:
+                with open(c_drive_path, "w") as f:
+                    f.write(content)
+                logger.info(f"[{SUT_NAME}] Saved: {c_drive_path}")
+            except Exception as e:
+                logger.warning(f"[{SUT_NAME}] Could not save to C: drive: {e}")
 
         break
     
