@@ -5,24 +5,11 @@ Monitors the Stack Management Tool (SMT) for new stack releases.
 """
 
 from datetime import datetime
-from enum import IntEnum
 import requests
 from requests_ntlm import HttpNtlmAuth
 
 from .config_loader import logger
-
-
-# ===========================================
-# Program Enum
-# ===========================================
-class Program(IntEnum):
-    """
-    Enumeration of supported program IDs for SMT monitoring.
-    """
-    MAGNUS = 1            # Placeholder - ID TBD
-    GAINSBOROUGH = 1434
-    SOUNDWAVE = 1427
-    CANIS = 1430
+from .constants import Program
 
 
 # ===========================================

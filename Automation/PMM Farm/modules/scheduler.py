@@ -29,22 +29,29 @@ def schedule_single_apex_job(apex_url, owner, subscription_id, job_name, priorit
     Returns:
         bool: True if job was scheduled successfully (HTTP 200), False otherwise.
     """
+    # Get job defaults from config
+    apex_config = config.get("apex", {})
+    job_defaults = apex_config.get("job_defaults", {})
+    
     data = {
         "name": job_name,
         "owner": owner,
         "priority": priority,
-        "is_persistent": "false",
-        "completion_criteria": "AllTestStations",
-        "test_loops": "1",
+        "is_persistent": job_defaults.get("is_persistent", "false"),
+        "completion_criteria": job_defaults.get("completion_criteria", "AllTestStations"),
+        "test_loops": job_defaults.get("test_loops", "1"),
         "subscription_id": subscription_id,
         "setup_queue": setup_queue,
         "test_queue": test_queue,
-        "argument_overrides": "",
-        "execution_label": get_config(config, "apex", "execution_label", "xhoe_scheduler_testing")
+        "argument_overrides": job_defaults.get("argument_overrides", ""),
+        "execution_label": apex_config.get("execution_label", "xhoe_scheduler_testing")
     }
 
+    # Get timeout from config
+    timeout = get_config(config, "intervals", "apex_timeout", 30)
+
     try:
-        response = requests.post(apex_url, data=data, timeout=30)
+        response = requests.post(apex_url, data=data, timeout=timeout)
         logger.info(f"APEX Job: {job_name} → {response.status_code}")
         return response.status_code == 200
     except Exception as e:
@@ -52,7 +59,7 @@ def schedule_single_apex_job(apex_url, owner, subscription_id, job_name, priorit
         return False
 
 
-def schedule_permutations_to_stations(apex_url, owner, stations, permutations, install_stack=False, weekly_permutations=False, program="SOUNDWAVE"):
+def schedule_permutations_to_stations(apex_url, owner, stations, permutations, install_stack=False, weekly_permutations=False, program="SOUNDWAVE", preschedule_mode=True):
     """
     Schedule APEX jobs to stations.
     
@@ -68,9 +75,12 @@ def schedule_permutations_to_stations(apex_url, owner, stations, permutations, i
         install_stack (bool): True = Weekly new stack, False = Daily run
         weekly_permutations (bool): If True, run permutations on weekly runs too
         program (str): Program name (SOUNDWAVE, GAINSBOROUGH, CANIS)
+        preschedule_mode (bool): If True, assign permutations to specific stations (IP-based).
+                                 If False, generic scheduling (no station-specific assignments).
     
     Returns:
-        dict: Summary of scheduling results.
+        dict: Summary of scheduling results including 'station_assignments' 
+              mapping station IPs to their assigned permutation names (only when preschedule_mode=True).
     """
     logger.info("Starting job scheduling...")
     logger.info(f"Program: {program}")
@@ -96,6 +106,7 @@ def schedule_permutations_to_stations(apex_url, owner, stations, permutations, i
     
     run_label = "Weekly Stack" if install_stack else "Daily"
     logger.info(f"Run type: {run_label}")
+    logger.info(f"Preschedule mode: {'ON' if preschedule_mode else 'OFF'}")
     
     # Convert stations dict to list
     station_list = [
@@ -104,7 +115,9 @@ def schedule_permutations_to_stations(apex_url, owner, stations, permutations, i
     ]
     num_stations = len(station_list)
     
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S MYT')
+    # Get timestamp format from config
+    timestamp_format = config.get("apex", {}).get("timestamp_format", "%Y-%m-%d %H:%M:%S MYT")
+    timestamp = datetime.now().strftime(timestamp_format)
     baseline_success = True
     feature_scheduled = 0
     failed = 0
@@ -132,6 +145,9 @@ def schedule_permutations_to_stations(apex_url, owner, stations, permutations, i
     # =========================================
     # Step 2: Schedule feature jobs for each permutation
     # =========================================
+    # Track station assignments: IP -> list of assigned permutation names (only for preschedule mode)
+    station_assignments = {ip: [] for ip, _, _ in station_list} if preschedule_mode else {}
+    
     # Skip permutations for weekly unless weekly_permutations flag is enabled
     skip_permutations = install_stack and not weekly_permutations
     
@@ -151,8 +167,16 @@ def schedule_permutations_to_stations(apex_url, owner, stations, permutations, i
             station_index = i % num_stations
             ip, subscription_id, station_name = station_list[station_index]
             
-            feature_job_name = f"{station_name} - {perm_name} - {timestamp}"
-            logger.info(f"  {perm_name} → {station_name} (P{feature_priority})")
+            # Track assignment for this station (only in preschedule mode)
+            if preschedule_mode:
+                station_assignments[ip].append(perm_name)
+                # Job name includes permutation name (tied to specific station)
+                feature_job_name = f"{station_name} - {perm_name} - {timestamp}"
+                logger.info(f"  {perm_name} → {station_name} ({ip}) (P{feature_priority})")
+            else:
+                # Job name does NOT include permutation name (free-for-all mode)
+                feature_job_name = f"{station_name} - Feature Job {i+1} - {timestamp}"
+                logger.info(f"  Job {i+1} → {station_name} (P{feature_priority})")
             
             success = schedule_single_apex_job(
                 apex_url, owner, subscription_id, feature_job_name, feature_priority, feature_setup, feature_test
@@ -171,9 +195,19 @@ def schedule_permutations_to_stations(apex_url, owner, stations, permutations, i
     if failed > 0:
         logger.warning(f"  Failed: {failed}")
     
+    # Log station assignments (only for preschedule mode)
+    if preschedule_mode:
+        logger.info("Station Assignments:")
+        for ip, assigned_perms in station_assignments.items():
+            station_name = next((name for i, _, name in station_list if i == ip), ip)
+            logger.info(f"  {station_name} ({ip}): {len(assigned_perms)} permutations")
+    else:
+        logger.info("Free-for-all mode: No station-specific assignments")
+    
     return {
         "baseline_scheduled": baseline_success,
         "feature_scheduled": feature_scheduled,
         "total_permutations": len(permutations) if permutations else 0,
-        "failed": failed
+        "failed": failed,
+        "station_assignments": station_assignments
     }

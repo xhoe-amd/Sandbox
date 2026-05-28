@@ -13,9 +13,33 @@ import yaml
 # ===========================================
 # Directory and File Paths
 # ===========================================
+# Get the directory where the main script is located (parent of modules)
+SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_FILE = os.path.join(SCRIPT_DIR, "config_server.yaml")
+
+
+def _load_initial_config():
+    """Load config file for initial setup (before logger is available)."""
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                return yaml.safe_load(f) or {}
+    except Exception:
+        pass
+    return {}
+
+
+# Load config early for directory setup
+_initial_config = _load_initial_config()
+
+# Get app settings from config or use defaults
+APP_NAME = _initial_config.get("app", {}).get("name", "APEXScheduler")
+LOG_FILENAME = _initial_config.get("app", {}).get("log_filename", "pmm_server.log")
+STATE_FILENAME = _initial_config.get("app", {}).get("state_filename", "server_state.json")
+LOG_LEVEL_STR = _initial_config.get("app", {}).get("log_level", "INFO")
+
 # Use %LOCALAPPDATA% for Windows (standard location for per-user app data)
 # Falls back to user home directory on other platforms
-APP_NAME = "APEXScheduler"
 if os.name == 'nt':  # Windows
     APP_DATA_DIR = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), APP_NAME)
 else:  # Linux/Mac
@@ -23,29 +47,40 @@ else:  # Linux/Mac
 
 os.makedirs(APP_DATA_DIR, exist_ok=True)
 
-# Get the directory where the main script is located (parent of modules)
-SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 # Log files
-LOG_FILE_APPDATA = os.path.join(APP_DATA_DIR, "pmm_server.log")
-LOG_FILE_LOCAL = os.path.join(SCRIPT_DIR, "pmm_server.log")
-STATE_FILE = os.path.join(APP_DATA_DIR, "server_state.json")
+LOG_FILE_APPDATA = os.path.join(APP_DATA_DIR, LOG_FILENAME)
+LOG_FILE_LOCAL = os.path.join(SCRIPT_DIR, LOG_FILENAME)
+STATE_FILE = os.path.join(APP_DATA_DIR, STATE_FILENAME)
 
 
 # ===========================================
 # Logging Setup
 # ===========================================
-def setup_logging(level=logging.INFO):
+def _get_log_level(level_str):
+    """Convert log level string to logging constant."""
+    levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL
+    }
+    return levels.get(level_str.upper(), logging.INFO)
+
+
+def setup_logging(level=None):
     """
     Configure logging for the PMM Server application.
     Logs to console and two files (AppData and current directory).
     
     Args:
-        level: Logging level (default: INFO)
+        level: Logging level (default: from config or INFO)
     
     Returns:
         Logger instance
     """
+    if level is None:
+        level = _get_log_level(LOG_LEVEL_STR)
     log_format = '%(asctime)s | %(levelname)-7s | %(message)s'
     date_format = '%Y-%m-%d %H:%M:%S'
     
@@ -82,7 +117,6 @@ def setup_logging(level=logging.INFO):
 
 # Create logger instance
 logger = setup_logging()
-CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.yaml")
 
 
 # ===========================================
