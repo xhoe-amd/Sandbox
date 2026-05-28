@@ -1,14 +1,11 @@
 # Station Configuration for APEX Scheduler
 # Format: IP address as key, with subscription_id and name as nested values
 
-192.168.1.10:
-  subscription_id: "4574"
-  name: "Station-A"
+# DEMO SWV STATIONS FOR TESTING
+10.148.222.35:
+  subscription_id: "4635"
+  name: "HarrisSWV"
 
-192.168.1.11:
-  subscription_id: "4575"
-  name: "Station-B"
-
-192.168.1.12:
-  subscription_id: "4576"
-  name: "Station-C"
+10.148.222.19:
+  subscription_id: "4636"
+  name: "TKSWV"
